@@ -131,9 +131,19 @@ The registry `main` will use on mainnet: test run 5's with version 3.1 of the pa
 |---|---|---|
 | ProjectRegistry | [`0x30a3bb4d75989cb19f83607abc2dffe52a253384`](https://sepolia.etherscan.io/address/0x30a3bb4d75989cb19f83607abc2dffe52a253384) | Stacker `0x0457…314d`, fee `ORACLE_FEE()` 0.5 test IMD of `0x44a1…f89a` (read live from Intake v2), challenge bond 5 test IMD, cooldown 1 hour, panel 15/11, 1-day expiry, one beneficiary handoff per day, owed bonds, owner-only applications. |
 
-### Robinhood Chain (planned: the multichain route)
+### Robinhood Chain (chain 4663, launch pending)
 
 The multichain route ([design](docs/design.md#multichain-cashback-from-other-chains)): a **RemoteStacker** on Robinhood Chain (chain 4663) with the same `credit(trader, imdAmount)`, whose waiting cashback anyone can `flush` to Ethereum through IMD's own LayerZero bridge for a tip of up to 2%, and a **StackReceiver** on Ethereum that deposits each delivery into the sIMD vault for its trader. The StackReceiver is **live on Ethereum** (launch #1529, `0x1999…3d10`, table below); the RemoteStacker launches next with its address ([`jobs/15-robinhood-remotestacker-launch.md`](jobs/15-robinhood-remotestacker-launch.md)), then a Robinhood Chain ProjectRegistry.
+
+| Contract | Address | Notes |
+|---|---|---|
+| RemoteStacker | Awaiting confirmed IMD deployment | The only contract in this branch's [`launch.json`](launch.json). Uses Robinhood IMD `0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127`, the live Ethereum StackReceiver `0x1999a54f573dac75ce8ef62a555dba418c9b3d10`, the Ethereum sIMD vault `0x9efa934d9fad4ae28c998a40195646b965a97247` (recipient exclusion only), and destination endpoint id `30101`. |
+
+After IMD deploys it, replace the pending address with the confirmed RemoteStacker address and deployment transaction. The build and fork rehearsals do not produce a live deployment address.
+
+`Queued(project, trader, recipient, imd)` records credits; only credits from listed projects earn points. Unregistered contract wallets receive plain IMD here (`Paid`, no points). Both `credit` and `setEthereumRecipient` refuse the Ethereum IMD token and LayerZero endpoint as well as the existing invalid destinations, since those contracts cannot recover sIMD. The amount-weighted arrival clock rounds up to a whole second in the trader's favor; tips apply only to whole bridge steps that leave. Audit fixes and their tests are recorded in [ADAPTATION.md](ADAPTATION.md).
+
+Delivery depends on IMD's OFT configuration and LayerZero. The OFT owner can disable the Ethereum peer or otherwise make sends fail; waiting balances then remain queued, credits still succeed, and there is no withdrawal or alternate route.
 
 ### Ethereum mainnet (live, launch #1409, block 26,176,629)
 
@@ -240,7 +250,7 @@ test/                     Foundry tests: unit, edge cases, fuzz, invariants, dep
   mocks/                  TestIMD, TestSIMD (a copy of StakedIMD), a mock Intake, a mock OFT and endpoint: test doubles only
   trial/                  SelfCredit and TrialVenue: the registry trial's negative and positive cases (Sepolia only)
 lib/                      forge-std, OpenZeppelin and Solady files, vendored
-launch.json               the next IMD launch's manifest: the StackReceiver on Ethereum (the Stacker and registry are live)
+launch.json               this branch's manifest: only the RemoteStacker on Robinhood Chain
 foundry.toml              solc 0.8.26, cancun, 10,000 optimizer runs, bytecode_hash none
 docs/
   listing.md              how a project gets listed: steps, checklist, fee guard, delisting
@@ -280,7 +290,7 @@ With [Foundry](https://getfoundry.sh) 1.8.3, the version IMD's verifier runs:
 
 ```
 forge build
-forge test                                                        # 292 tests; the 20 fork tests skip
+forge test                                                        # RPC-dependent and other-launch manifest tests skip
 ETH_RPC_URL=https://ethereum-rpc.publicnode.com forge test --mc MainnetFork            # live IMD and sIMD
 ETH_RPC_URL=https://ethereum-rpc.publicnode.com forge test --mc StackReceiverMainnetFork # the live endpoint delivers to the receiver
 SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com forge test --mc SepoliaFork # live TestIMD and TestSIMD; RegistrySepoliaFork: the real Intake v2
@@ -290,7 +300,7 @@ forge fmt --check src test
 
 The mainnet fork tests check the live vault's facts (asset, renounced owner, not paused), a credit to a new and a repeat trader, and the one-block hold followed by a redeem. The Sepolia ones check a credit, its event and totals, and that a paused vault makes `credit` revert without moving anything; the registry's fork test sends a real application to Intake v2 and settles it. The multichain fork tests play a bridge arrival on Ethereum exactly as the live contracts do (IMD's `lzReceive`, then the endpoint's `lzCompose` into the StackReceiver) and send a real send-and-call from a RemoteStacker through Robinhood Chain's live IMD.
 
-**Branches:** `main`'s `launch.json` is the next mainnet launch's manifest: the StackReceiver, on the live IMD, sIMD and LayerZero endpoint (job 14). The `sepolia` branch differs only in `launch.json` (test run 6's registry, wired to the live Sepolia Stacker). `launch-mainnet` and `launch-sepolia` are those two without `.github/workflows`, for IMD's launches; never merge them back. A `robinhood` branch (and `launch-robinhood`) will carry the RemoteStacker's manifest once the receiver's address is known.
+**Branches:** `main`'s `launch.json` describes the StackReceiver on Ethereum (job 14, now live). The `sepolia` branch carries test run 6's registry, wired to the live Sepolia Stacker. `robinhood` and this `launch-robinhood` branch carry only the RemoteStacker's manifest, wired to launch #1529's live receiver. The `launch-mainnet`, `launch-sepolia` and `launch-robinhood` variants omit `.github/workflows` for IMD's launches.
 
 **Working with IMD:** jobs are paid in IMD (0.5 IMD each) from the owner's wallet. Run the free `POST https://api.imd.fun/requests/check` before paying. Set hosting only with the job's `ipfs` field, never in the prompt text, or the agent tries to publish the site itself and blocks. Docs: https://imd.fun/docs.
 
